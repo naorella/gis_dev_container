@@ -1,0 +1,46 @@
+# Use postgres/example user/password credentials
+version: "3.9"
+
+services:
+  db:
+    build: ./gisdb
+    restart: always
+    # set shared memory limit when using docker-compose
+    shm_size: 128mb
+    # or set shared memory limit when deploy via swarm stack
+    volumes:
+      - ./gisdb/data:/var/lib/postgresql/data
+    #  - type: tmpfs
+    #    target: /dev/shm
+    #    tmpfs:
+    #      size: 134217728 # 128*2^20 bytes = 128Mb
+
+    environment:
+    #change the password, username, and database name to what you want.
+    #This is what you will be connecting to from the VScode terminal, if
+    #you dont want to use the local database, but instead the docker hosted
+    #database
+      POSTGRES_PASSWORD: password
+      POSTGRES_USER: admin
+      POSTGRES_DB: db
+
+    ports:
+      - 5432:5432
+    networks:
+      - gisnet
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    restart: always
+    ports:
+      - 5050:80
+    environment:
+    #change to what you want
+      - PGADMIN_DEFAULT_EMAIL=admin
+      - PGADMIN_DEFAULT_PASSWORD=password
+    networks:
+      - gisnet
+
+networks:
+#Change network name if desired
+  gisnet:

@@ -1,0 +1,32 @@
+{
+  "name": "Analyst Container",
+  "dockerFile": "../dockerfile",
+  "workspaceFolder": "/workspace",
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  "mounts": [
+    "source=PATH/TO/YOUR/FOLER,target=/workspace,type=bind,consistency=cached",
+    "source=ANY/OTHER/FOLDERS/YOU/WANT,target=/workspace,type=bind,consistency=cached"
+  ],
+  "forwardPorts": [3000],
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "./venv/bin/python",
+        "python.terminal.activateEnvInCurrentTerminal": true
+      },
+      "extensions": [
+        "ms-python.vscode-pylance",
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.jupyter-renderers",
+        "ms-toolsai.vscode-jupyter-cell-tags",
+        "ms-toolsai.jupyter-keymap",
+        "ms-toolsai.vscode-jupyter-slideshow",
+        "esbenp.prettier-vscode",
+        "mechatroner.rainbow-csv",
+        "GitHub.vscode-pull-request-github"
+      ]
+    }
+  }
+}

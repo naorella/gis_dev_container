@@ -1,0 +1,224 @@
+#This dockerfile builds an ubuntu image and downloads packages in order to create an environment
+# which can run geopandas within Jupyter Notebooks as well as organize geographical information in 
+# an SQL database.
+
+
+#Build an ubuntu image
+FROM ubuntu:22.04
+
+#--------------------USER SETUP--------------------
+#user setup copied from freecodecamp dbalpha
+
+ARG USERNAME=user
+ARG HOMEDIR=/workspace
+ARG VIRTENV=${HOMEDIR}/venv/bin
+#folder name for you to clone into
+ARG GIT_FOLDER=git_folder
+
+RUN apt update && apt install -y sudo
+RUN sudo apt-get -y install locales
+
+ENV TZ="America/New_York" \
+  LOCALE=en_US.UTF-8
+# Set the locale
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen
+ENV LANG en_US.UTF-8  
+ENV LANGUAGE en_US:en  
+ENV LC_ALL en_US.UTF-8
+
+# Unminimize Ubuntu to restore man pages
+RUN yes | unminimize
+
+# Set up timezone
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Set up user, disable pw, and add to sudo group
+RUN sudo apt-get install adduser
+RUN adduser --disabled-password \
+  --gecos '' ${USERNAME}
+
+RUN adduser ${USERNAME} sudo
+
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> \
+  /etc/sudoers
+
+USER ${USERNAME}
+
+#--------------------PACKAGE SETUP--------------------
+#fetch package lists
+RUN sudo apt-get update
+RUN sudo apt-get -y install curl 
+RUN sudo apt-get -y install man
+
+#install python, pip, and setup venv
+RUN sudo apt-get -y install python3.10
+RUN sudo apt-get -y install python3.10-venv
+RUN sudo apt-get -y install python3-pip
+RUN sudo python3 -m venv ${HOMEDIR}/venv
+
+#install wheel, setup, and packaging tools to help with pip installing certain libraries
+RUN sudo ${VIRTENV}/pip install wheel
+RUN sudo ${VIRTENV}/pip install setuptools
+RUN sudo ${VIRTENV}/pip install packaging
+
+#retrieve ppa, community handled libraries, and then refresh package list
+RUN sudo apt-get -y install software-properties-common
+RUN sudo add-apt-repository ppa:ubuntugis/ppa
+RUN sudo apt-get update
+
+
+#--------------------DATABASE MANAGMENT--------------------
+RUN sudo apt-get -y install runit-systemd
+
+#retrieve packages
+RUN sudo apt-get -y install ca-certificates gnupg
+RUN sudo curl https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/apt.postgresql.org.gpg >/dev/null
+RUN sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+#update package list
+RUN sudo apt update
+RUN sudo apt -y upgrade
+
+#Activate POSTGIS
+RUN sudo apt-get -y install postgresql-16
+RUN sudo service postgresql start
+
+#install POSTGIS exstensions
+RUN sudo apt -y install postgresql-16-postgis-3
+#to read shapefiles and import them to the db
+RUN sudo apt -y install postgresql-16-ogr-fdw
+RUN sudo apt -y install postgis
+#routing package, calculate road networks
+RUN sudo apt -y install postgresql-16-pgrouting
+# for open street map routing
+RUN sudo apt -y install osm2pgrouting
+
+#run a script that activates postgis in a newly create database, gisdb with user analyst
+#freate folder for data (will be replace soon)
+#RUN sudo mkdir -m a=rwx ${HOMEDIR}/gis_data
+#copy the script to activate the postgis db
+COPY postGIS_setup.sh ${HOMEDIR}
+#give it permission
+RUN sudo chmod +x ${HOMEDIR}/postGIS_setup.sh
+#run script
+#RUN ${HOMEDIR}/postGIS_setup.sh
+
+#restart postgresql to apply changes
+RUN sudo service postgresql restart
+
+#The following are the dependencies for geopandas
+#--------------------MAIN DEPENDENCIES--------------------
+#install numpy, needed for complex math operations
+RUN sudo ${VIRTENV}/pip install numpy
+
+#GDLA is need for translating raster and vector geospatial data
+#download GDAL binaries
+RUN sudo apt -y install gdal-bin
+RUN sudo apt-get -y install libgdal-dev
+RUN sudo apt-get -y install python3-gdal
+
+#install gdal bindings for python
+#environment variables for gdal
+RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
+RUN export C_INCLUDE_PATH=/usr/include/gdal
+#install gdal for python with addition numpy dependencies according to the gdal version we already have
+RUN sudo ${VIRTENV}/pip install gdal[numpy]=="$(gdal-config --version).*"
+#interface for GDAL
+RUN sudo ${VIRTENV}/pip install pyogrio
+
+#install GEOS and shapely for creating geometric shapes
+RUN sudo apt -y install libgeos-dev
+RUN sudo ${VIRTENV}/pip install shapely
+
+#install spatial index for tree indexing
+RUN sudo apt -y install libspatialindex-dev
+
+#install PROJ and pyproj for coordinate transformation
+#software
+RUN sudo apt-get -y install proj-bin
+#interface
+RUN sudo ${VIRTENV}/pip install pyproj
+
+
+#--------------------OPTIONAL DEPENDENCIES--------------------
+#PostGIS Connection
+RUN sudo ${VIRTENV}/pip install "psycopg[binary]"
+RUN sudo ${VIRTENV}/pip install psycopg
+#Write to PostGIS
+RUN sudo ${VIRTENV}/pip install SQLAlchemy
+RUN sudo ${VIRTENV}/pip install GeoAlchemy2
+
+#Geocodding library
+RUN sudo ${VIRTENV}/pip install geopy
+
+#simple spatial analysis
+RUN sudo ${VIRTENV}/pip install rtree
+#advanced spatial analysis and colouring maps
+RUN sudo ${VIRTENV}/pip install pysal
+
+
+#--------------------PLOTTING DEPENDENCIES--------------------
+#plotting libraries
+RUN sudo ${VIRTENV}/pip install matplotlib
+RUN sudo ${VIRTENV}/pip install mapclassify
+
+#plot on map projections with matplotlib
+RUN sudo ${VIRTENV}/pip install basemap
+
+#retrieve maps from the internet to plot with matplotlib
+RUN sudo ${VIRTENV}/pip install contextily
+
+#image processing
+RUN sudo ${VIRTENV}/pip install pillow
+#read raster data
+RUN sudo ${VIRTENV}/pip install rasterio
+
+#interactive plotting
+RUN sudo ${VIRTENV}/pip install folium
+
+#install ipykernel to run notebooks
+RUN sudo ${VIRTENV}/pip install ipykernel
+
+
+#--------------------GEOPANDAS--------------------
+#and finally install geopandas which will use all the previous dependencies for spatial analysis
+RUN sudo ${VIRTENV}/pip install geopandas
+
+
+#--------------------FILE MANAGEMENT--------------------
+#install git for version control
+RUN sudo apt -y install git
+COPY gitconfig.sh ${HOMEDIR}
+RUN sudo chmod +x ${HOMEDIR}/gitconfig.sh
+RUN bash ${HOMEDIR}/gitconfig.sh
+
+#manage zip folders
+RUN sudo apt -y install unzip
+
+#edit files
+RUN sudo apt-get -y install nano
+
+#--------------------WORK ENVIRONMENT SETUP--------------------
+#Create git project folder
+#The folder to git clone a project into
+RUN sudo mkdir ${HOMEDIR}/${GIT_FOLDER}
+
+
+# Configure project directory and change owner
+RUN sudo chown -R ${USERNAME}:${USERNAME} ${HOMEDIR}
+
+#go to home directory for project
+WORKDIR ${HOMEDIR}
+
+#--------------------REQUIREMENTS--------------------
+#see what apts and their versions we got
+RUN sudo apt list --installed > apt_requirements.txt
+#see what pip versions we installed
+RUN sudo ${VIRTENV}/pip list > pip_requirements.txt
+#pip feeze to see what libraries we installed with pip and their versions
+RUN sudo ${VIRTENV}/pip freeze > python_requirements.txt
+
+
+#activate the virtual environment to run our python libraries on
+CMD sudo python3 -m venv ${VIRTENV}/activate
+
